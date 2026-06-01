@@ -1,0 +1,57 @@
+{
+  "activationEvents": [
+    "onLanguage:al"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "al",
+      "extensions": [".al"]
+    }],
+    "configuration": {
+      "title": "AL Advanced Convention Setup",
+      "properties": {
+        "alConvention.objectPrefix": {
+          "type": "string",
+          "default": "ATL_",
+          "description": "Mandatory prefix for AL Objects (Table, Page, Codeunit, etc.)"
+        },
+        "alConvention.temporaryPrefix": {
+          "type": "string",
+          "default": "temp",
+          "description": "Prefix indicator for temporary variables. Set to empty if not required."
+        },
+        "alConvention.typeMapping": {
+          "type": "object",
+          "default": {
+            "Record": "rec",
+            "Codeunit": "cu",
+            "Page": "pag",
+            "Report": "rep",
+            "Integer": "int",
+            "Text": "txt",
+            "Code": "cod",
+            "Boolean": "boo",
+            "Decimal": "dec"
+          },
+          "description": "Short type abbreviations mapping used for Hungarian notation prefixes."
+        },
+        "alConvention.namingStyles": {
+          "type": "object",
+          "default": {
+            "procedure": "snake_case",
+            "parameter": "snake_case",
+            "local_variable": "snake_case",
+            "global_variable": "snake_case"
+          },
+          "description": "Naming style format rule for each component type. Supported: snake_case, camelCase, PascalCase"
+        }
+      }
+    }
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "name": "al-advance-convension",
+  "version": "0.0.1"
+}
