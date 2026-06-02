@@ -11,22 +11,37 @@
     "configuration": {
       "title": "AL Advanced Convention Setup",
       "properties": {
-        "alConvention.objectPrefix": {
+        "alConvention.objectPrefixText": {
           "type": "string",
           "default": "ATL_",
+          "scope": "resource",
           "description": "Mandatory prefix for AL Objects (Table, Page, Codeunit, etc.)"
         },
-        "alConvention.temporaryPrefix": {
-          "type": "string",
-          "default": "temp",
-          "description": "Prefix indicator for temporary variables. Set to empty if not required."
+        "alConvention.NamingStyle": {
+          "type": "object",
+          "default": {
+            "procedure": "PascalCase",
+            "parameter": "PascalCase",
+            "local_variable": "PascalCase",
+            "global_variable": "PascalCase",
+            "ProcedureParameter": "PascalCase"
+          },
+          "scope": "resource",
+          "description": "Naming style format rule for each component type."
         },
-        "alConvention.typeMapping": {
+        "alConvention.ProcedureParameter.ShowTypeInName": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Toggle to include or exclude short type name inside variables/parameters."
+        },
+        "alConvention.ProcedureParameter.TypeName": {
           "type": "object",
           "default": {
             "Record": "rec",
-            "Codeunit": "cu",
             "Page": "pag",
+            "Codeunit": "cu",
+            "Query": "que",
             "Report": "rep",
             "Integer": "int",
             "Text": "txt",
@@ -34,17 +49,19 @@
             "Boolean": "boo",
             "Decimal": "dec"
           },
-          "description": "Short type abbreviations mapping used for Hungarian notation prefixes."
+          "scope": "resource",
+          "description": "Short type abbreviations mapping used for prefixes."
         },
-        "alConvention.namingStyles": {
+        "alConvention.ObjectPrefix": {
           "type": "object",
           "default": {
-            "procedure": "snake_case",
-            "parameter": "snake_case",
-            "local_variable": "snake_case",
-            "global_variable": "snake_case"
+            "ProcedureParameter": "p",
+            "temporaryPrefix": "temp",
+            "globalVariablePrefix": "g",
+            "localVariablePrefix": "l"
           },
-          "description": "Naming style format rule for each component type. Supported: snake_case, camelCase, PascalCase"
+          "scope": "resource",
+          "description": "Prefix indicators for scopes and temporary states."
         }
       }
     }
@@ -53,5 +70,6 @@
     "vscode": "^1.85.0"
   },
   "name": "al-advance-convension",
-  "version": "0.0.2"
+  "version": "0.0.13",
+  "publisher": "HaThanhHuy"
 }
