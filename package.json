@@ -72,9 +72,9 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "name": "al-advance-convension",
+  "name": "al-team-convention",
   "icon": "logo.png",
-  "displayName": "AL Convension",
-  "version": "0.1.1",
+  "displayName": "AL Team Convention",
+  "version": "1.0.0",
   "publisher": "HaThanhHuy"
 }
