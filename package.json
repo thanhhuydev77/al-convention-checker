@@ -1,6 +1,9 @@
 {
   "activationEvents": [
-    "onLanguage:al"
+    "onLanguage:al",
+    "onLanguage:json",
+    "onLanguage:jsonc",
+    "workspaceContains:**/*.al"
   ],
   "main": "./src/extension.js",
   "contributes": {
@@ -70,6 +73,6 @@
     "vscode": "^1.85.0"
   },
   "name": "al-advance-convension",
-  "version": "0.0.13",
+  "version": "0.0.16",
   "publisher": "HaThanhHuy"
 }

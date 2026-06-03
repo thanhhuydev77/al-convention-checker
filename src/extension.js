@@ -23,6 +23,27 @@ function activate(context) {
         })
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerCommand('alConvention.fixNaming', async (uri, range, newName) => {
+            try {
+                // Gọi Rename Provider mặc định của VS Code (nhờ AL Language server tìm references)
+                const edit = await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider', uri, range.start, newName);
+                
+                if (edit && edit.size > 0) {
+                    await vscode.workspace.applyEdit(edit);
+                    return;
+                }
+            } catch (error) {
+                console.warn("AL Rename Provider failed or not available:", error);
+            }
+            
+            // Fallback: Nếu không tìm thấy references hoặc có lỗi, sửa tạm ở file hiện tại tại dòng khai báo
+            const fallbackEdit = new vscode.WorkspaceEdit();
+            fallbackEdit.replace(uri, range, newName);
+            await vscode.workspace.applyEdit(fallbackEdit);
+        })
+    );
+
     if (vscode.window.activeTextEditor) {
         runValidation(vscode.window.activeTextEditor.document);
     }
@@ -39,9 +60,11 @@ class ALActionProvider {
                         `Rename to '${diagnostic.suggestedFix}' (AL Convention)`, 
                         vscode.CodeActionKind.QuickFix
                     );
-                    const edit = new vscode.WorkspaceEdit();
-                    edit.replace(document.uri, diagnostic.range, diagnostic.suggestedFix);
-                    fixAction.edit = edit;
+                        fixAction.command = {
+                            command: 'alConvention.fixNaming',
+                            title: fixAction.title,
+                            arguments: [document.uri, diagnostic.range, diagnostic.suggestedFix]
+                        };
                     fixAction.isPreferred = true;
                     actions.push(fixAction);
                 }
@@ -114,8 +137,8 @@ function reviewALCode(document, collection) {
     const typeNameMap = config.get('ProcedureParameter.TypeName') || {};
     const objectPrefix = config.get('ObjectPrefix') || {};
 
-    const pPrefix = objectPrefix['ProcedureParameter'] || 'p';
-    const tempPrefix = objectPrefix['temporaryPrefix'] || 'temp';
+    const pPrefix = objectPrefix['ProcedureParameter'] || '';
+    const tempPrefix = objectPrefix['temporaryPrefix'] || '';
     const gPrefix = objectPrefix['globalVariablePrefix'] || '';
     const lPrefix = objectPrefix['localVariablePrefix'] || '';
 
