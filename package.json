@@ -73,6 +73,8 @@
     "vscode": "^1.85.0"
   },
   "name": "al-advance-convension",
-  "version": "0.0.16",
+  "icon": "logo.png",
+  "displayName": "AL Convension",
+  "version": "0.1.1",
   "publisher": "HaThanhHuy"
 }
