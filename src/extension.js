@@ -123,7 +123,10 @@ function formatBaseName(str, style) {
 }
 
 function reviewALCode(document, collection) {
-    if (document.languageId !== 'al') { return; }
+    // Bỏ qua nếu không phải file AL hoặc đang ở trong chế độ Git Compare (scheme: 'git')
+    if (document.languageId !== 'al' || (document.uri.scheme !== 'file' && document.uri.scheme !== 'untitled')) { 
+        return; 
+    }
 
     const diagnostics = [];
     const text = document.getText();
