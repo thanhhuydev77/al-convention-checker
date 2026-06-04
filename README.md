@@ -1,105 +1,52 @@
-# AL Advanced Naming Convention Checker
+# AL Team Convention
 
-A powerful, customizable VS Code extension designed to enforce strict coding conventions for the AL Language (Dynamics 365 Business Central). It scans your code in real-time, provides clear diagnostic feedback on naming conventions, and supports Quick Fixes (including auto-renaming related symbols).
+A Visual Studio Code extension designed to enforce and automatically fix naming conventions in AL (Dynamics 365 Business Central) projects. It helps your team maintain a consistent, clean, and readable codebase effortlessly.
 
 ## Features
 
-- **Object Prefix Verification:** Mandates custom prefixes (e.g., `ATL_`) for all AL objects (Table, Page, Codeunit, Report, Query, XMLPort, TableExtension, PageExtension).
-- **Flexible Naming Styles:** Enforces specific casing (`PascalCase`, `camelCase`, `snake_case`) independently for procedures, parameters, local variables, and global variables.
-- **Hungarian Notation Support:** Automatically checks for variable declarations combining scope prefixes (`p` for parameters, `l` for locals, `g` for globals) and configured short data-type prefixes (e.g., `rec`, `int`, `txt`).
-- **Smart Temporary Variable Isolation:** Dynamically recognizes inline `temporary` strings or `IsTemporary = true;` configurations and enforces custom temporary prefixes.
-- **Quick Fix & Rename Provider:** Instantly fix naming issues directly from the code editor. It integrates with VS Code's Rename Provider to safely rename variable references across your workspace.
+- **Object Naming Validation**: Ensures all AL objects (Tables, Pages, Codeunits, Reports, etc.) start with a mandatory team prefix.
+- **Variable & Parameter Naming**: Validates naming styles (e.g., `PascalCase`, `camelCase`, `snake_case`) for global variables, local variables, and parameters.
+- **Smart Type Abbreviations**: Automatically checks if variables include their short type abbreviations (e.g., `rec` for Record, `cu` for Codeunit, `jso` for JsonObject, `jst` for JsonToken) based on your team's custom mapping.
+- **Scope & Temporary Indicators**: Enforces correct prefixes for scopes (`g` for global, `l` for local, `p` for parameters) and temporary states (e.g., `temp`).
+- **Quick Fixes (Code Actions)**: Provides 1-click Quick Fixes to automatically rename non-compliant variables, parameters, and procedures across your document using VS Code's native rename provider.
 
 ## Extension Settings
 
-You can customize this extension via your standard VS Code `settings.json` file. Here are the available configuration properties:
+This extension contributes the following settings that can be configured in your `settings.json`:
 
-### 1. Object Prefix
-* **`alConvention.objectPrefixText`**  
-  **Type:** `string` | **Default:** `"ATL_"`  
-  Mandatory prefix for AL Objects (Table, Page, Codeunit, etc.).
+| Field | Default Value | Description |
+|-------|---------------|-------------|
+| `alConvention.alObjectPrefix` | `"ATL_"` | Mandatory prefix for AL Objects (Table, Page, Codeunit, etc.). |
+| `alConvention.namingStyle` | `{...}` | Define naming styles for each component type (`procedure`, `parameter`, `local_variable`, `global_variable`). Options: `PascalCase`, `camelCase`, `snake_case`. |
+| `alConvention.showShortTypeInName` | `true` | Toggle to include or exclude short type names inside variables/parameters. |
+| `alConvention.typeAbbreviations` | `{...}` | Customize short type abbreviations mapping used for prefixes (e.g., `"Record": "rec"`, `"Codeunit": "cu"`, `"JsonObject": "jso"`). |
+| `alConvention.scopePrefixes` | `{...}` | Prefix indicators for different scopes (e.g., `p` for ProcedureParameter, `g` for globalVariable, `l` for localVariable). |
+| `alConvention.temporaryRecordPrefix` | `"temp"` | Prefix indicator for temporary records. |
+| `alConvention.temporaryPrefixBeforeScope` | `true` | If `true`, placed before scope (e.g., `TempgItem`). If `false`, placed after (e.g., `gTempItem`). |
 
-### 2. Naming Styles
-* **`alConvention.NamingStyle`**  
-  **Type:** `object`  
-  Define the naming style (`PascalCase`, `camelCase`, `snake_case`) for each component type.  
-  *Default:*
-  ```json
-  "alConvention.NamingStyle": {
-      "procedure": "PascalCase",
-      "parameter": "PascalCase",
-      "local_variable": "PascalCase",
-      "global_variable": "PascalCase"
-  }
-  ```
+## How to Use
 
-### 3. Variable/Parameter Configuration
-* **`alConvention.ProcedureParameter.ShowTypeInName`**  
-  **Type:** `boolean` | **Default:** `true`  
-  Toggle to include or exclude the short type name (e.g., `rec`, `int`) inside variables/parameters.
+1. Open any `.al` file in your workspace.
+2. The extension will automatically analyze the code on the fly and highlight any naming convention violations with yellow warnings.
+3. Hover over the warning to see the suggested compliant name.
+4. Click **Quick Fix** (or press `Ctrl+.` / `Cmd+.`) to safely and automatically rename the identifier across your entire document.
 
-* **`alConvention.ProcedureParameter.TypeName`**  
-  **Type:** `object`  
-  Short type abbreviations mapping used for prefixes. Modify this to match your team's standard.  
-  *Default:*
-  ```json
-  "alConvention.ProcedureParameter.TypeName": {
-      "Record": "rec", "Page": "pag", "Codeunit": "cu", 
-      "Query": "que", "Report": "rep", "Integer": "int", 
-      "Text": "txt", "Code": "cod", "Boolean": "boo", "Decimal": "dec"
-  }
-  ```
+## Customizing for your Team
 
-* **`alConvention.ObjectPrefix`**  
-  **Type:** `object`  
-  Prefix indicators for scopes (global, local, parameter) and temporary states.  
-  *Default:*
-  ```json
-  "alConvention.ObjectPrefix": {
-      "ProcedureParameter": "p",
-      "temporaryPrefix": "temp",
-      "globalVariablePrefix": "g",
-      "localVariablePrefix": "l"
-  }
-  ```
-
-## Example Configuration in `settings.json`
-
-To customize the extension for a specific project workspace, open the `.vscode/settings.json` file in your project and add your rules. For example:
+You can easily share these settings with your team by adding them to your workspace's `.vscode/settings.json` file:
 
 ```json
 {
-    "alConvention.objectPrefixText": "MYAPP_",
-    "alConvention.NamingStyle": {
-        "procedure": "camelCase",
-        "parameter": "camelCase",
-        "local_variable": "camelCase",
-        "global_variable": "PascalCase"
-    },
-    "alConvention.ProcedureParameter.ShowTypeInName": true,
-    "alConvention.ObjectPrefix": {
-        "ProcedureParameter": "p",
-        "temporaryPrefix": "Temp",
-        "globalVariablePrefix": "G",
-        "localVariablePrefix": "L"
-    }
+    "alConvention.alObjectPrefix": "MY_PREFIX_",
+    "alConvention.temporaryRecordPrefix": "tmp",
+    "alConvention.temporaryPrefixBeforeScope": false
 }
 ```
 
-## Example Code Layout
+## Requirements
 
-With the default configuration, your AL code should look something like this:
+- VS Code `^1.85.0` or higher.
+- AL Language extension for Dynamics 365 Business Central.
 
-```al
-codeunit 50100 ATL_MyMgtCodeunit 
-{
-    var
-        GTempRecCustomer: Record Customer temporary; // Valid temporary global (PascalCase)
-        GRecVendor: Record Vendor;                   // Valid regular global (PascalCase)
-
-    procedure CalculateTotals(PTempRecInvoice: Record "Sales Header" temporary)
-    var
-        LIntLoopCounter: Integer;                    // Valid local variable (PascalCase)
-    begin
-    end;
-}
+---
+*Built with ❤️ to keep your AL codebase clean.*

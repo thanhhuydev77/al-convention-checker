@@ -14,13 +14,13 @@
     "configuration": {
       "title": "AL Advanced Convention Setup",
       "properties": {
-        "alConvention.objectPrefixText": {
+        "alConvention.alObjectPrefix": {
           "type": "string",
           "default": "ATL_",
           "scope": "resource",
           "description": "Mandatory prefix for AL Objects (Table, Page, Codeunit, etc.)"
         },
-        "alConvention.NamingStyle": {
+        "alConvention.namingStyle": {
           "type": "object",
           "default": {
             "procedure": "PascalCase",
@@ -32,13 +32,13 @@
           "scope": "resource",
           "description": "Naming style format rule for each component type."
         },
-        "alConvention.ProcedureParameter.ShowTypeInName": {
+        "alConvention.showShortTypeInName": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
           "description": "Toggle to include or exclude short type name inside variables/parameters."
         },
-        "alConvention.ProcedureParameter.TypeName": {
+        "alConvention.typeAbbreviations": {
           "type": "object",
           "default": {
             "Record": "rec",
@@ -50,21 +50,38 @@
             "Text": "txt",
             "Code": "cod",
             "Boolean": "boo",
-            "Decimal": "dec"
+            "Decimal": "dec",
+            "XmlPort": "xml",
+            "JsonObject": "jso",
+            "JsonArray": "jsa",
+            "Dictionary": "dic",
+            "List": "lst",
+            "JsonToken": "jst"
           },
           "scope": "resource",
           "description": "Short type abbreviations mapping used for prefixes."
         },
-        "alConvention.ObjectPrefix": {
+        "alConvention.scopePrefixes": {
           "type": "object",
           "default": {
             "ProcedureParameter": "p",
-            "temporaryPrefix": "temp",
             "globalVariablePrefix": "g",
             "localVariablePrefix": "l"
           },
           "scope": "resource",
           "description": "Prefix indicators for scopes and temporary states."
+        },
+        "alConvention.temporaryRecordPrefix": {
+          "type": "string",
+          "default": "temp",
+          "scope": "resource",
+          "description": "Prefix indicator for temporary records."
+        },
+        "alConvention.temporaryPrefixBeforeScope": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "If true, temporary prefix is placed before scope prefix (e.g., TempgItem, TemplItem). If false, it is placed after (e.g., gTempItem, lTempItem)."
         }
       }
     }
@@ -75,6 +92,6 @@
   "name": "al-team-convention",
   "icon": "logo.png",
   "displayName": "AL Team Convention",
-  "version": "1.0.1",
+  "version": "1.0.9",
   "publisher": "HaThanhHuy"
 }
