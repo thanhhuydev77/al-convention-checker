@@ -24,6 +24,30 @@ This extension contributes the following settings that can be configured in your
 | `alConvention.temporaryRecordPrefix` | `"temp"` | Prefix indicator for temporary records. |
 | `alConvention.temporaryPrefixBeforeScope` | `true` | If `true`, placed before scope (e.g., `TempgItem`). If `false`, placed after (e.g., `gTempItem`). |
 
+### Default Type Abbreviations
+
+| AL Type | Abbreviation |
+| :--- | :--- |
+| **Record** | `rec` |
+| **Page** | `pag` |
+| **Codeunit** | `cu` |
+| **Query** | `que` |
+| **Report** | `rep` |
+| **Integer** | `int` |
+| **Text** | `txt` |
+| **Code** | `cod` |
+| **Boolean** | `boo` |
+| **Decimal** | `dec` |
+| **XmlPort** | `xml` |
+| **JsonObject** | `jso` |
+| **JsonArray** | `jsa` |
+| **Dictionary** | `dic` |
+| **List** | `lst` |
+| **JsonToken** | `jst` |
+| **Date** | `dat` |
+| **DateTime** | `dtm` |
+| **Time** | `tim` |
+
 ## How to Use
 
 1. Open any `.al` file in your workspace.

@@ -56,7 +56,10 @@
             "JsonArray": "jsa",
             "Dictionary": "dic",
             "List": "lst",
-            "JsonToken": "jst"
+            "JsonToken": "jst",
+            "Date": "dat",
+            "DateTime": "dtm",
+            "Time": "tim"
           },
           "scope": "resource",
           "description": "Short type abbreviations mapping used for prefixes."
@@ -92,6 +95,6 @@
   "name": "al-team-convention",
   "icon": "logo.png",
   "displayName": "AL Team Convention",
-  "version": "1.0.9",
+  "version": "1.1.2",
   "publisher": "HaThanhHuy"
 }
