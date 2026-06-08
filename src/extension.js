@@ -24,6 +24,10 @@ function activate(context) {
     );
 
     context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider('al', new ALVariableCompletionProvider(), ':', ' ', ',')
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('alConvention.fixNaming', async (uri, range, newName) => {
             try {
                 const edit = await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider', uri, range.start, newName);
@@ -34,7 +38,7 @@ function activate(context) {
             } catch (error) {
                 console.warn("AL Rename Provider failed or not available:", error);
             }
-            
+
             const fallbackEdit = new vscode.WorkspaceEdit();
             fallbackEdit.replace(uri, range, newName);
             await vscode.workspace.applyEdit(fallbackEdit);
@@ -54,7 +58,7 @@ class ALActionProvider {
             .forEach(diagnostic => {
                 if (diagnostic.suggestedFix) {
                     const fixAction = new vscode.CodeAction(
-                        `Rename to '${diagnostic.suggestedFix}' (AL Convention)`, 
+                        `Rename to '${diagnostic.suggestedFix}' (AL Convention)`,
                         vscode.CodeActionKind.QuickFix
                     );
                     fixAction.command = {
@@ -70,12 +74,116 @@ class ALActionProvider {
     }
 }
 
-// =========================================================================
-// 🛠️ CÁC HÀM TIỆN ÍCH XỬ LÝ CHUỖI (UTILITIES)
-// =========================================================================
+class ALScopeAnalyzer {
+    static getActiveScope(document, position) {
+        const textBeforeCursor = document.getText(new vscode.Range(0, 0, position.line, position.character));
+
+        const cleanText = textBeforeCursor
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\/\/.*/g, '')
+            .replace(/'[^']*'/g, "''");
+
+        const lastOpenParen = cleanText.lastIndexOf('(');
+        const lastCloseParen = cleanText.lastIndexOf(')');
+        if (lastOpenParen > lastCloseParen) {
+            const textBeforeParen = cleanText.substring(0, lastOpenParen).trim();
+            if (/(?:procedure|trigger)\s+[a-zA-Z0-9_]+\s*$/i.test(textBeforeParen)) {
+                return 'PARAMETER';
+            }
+        }
+
+        const lastVar = cleanText.lastIndexOf('var');
+        const lastBegin = cleanText.lastIndexOf('begin');
+
+        if (lastVar !== -1) {
+            if (lastBegin > lastVar) {
+                return 'UNKNOWN';
+            }
+
+            const lastProcedure = Math.max(cleanText.lastIndexOf('procedure'), cleanText.lastIndexOf('trigger'));
+            if (lastProcedure !== -1 && lastProcedure < lastVar) {
+                return 'LOCAL_VARIABLE';
+            }
+
+            if (this.isInsideExclusionBlock(cleanText)) {
+                return 'INVALID';
+            }
+            return 'GLOBAL_VARIABLE';
+        }
+
+        return 'UNKNOWN';
+    }
+
+    static isInsideExclusionBlock(text) {
+        const exclusionRegex = /\b(fields|keys|fieldgroups|layout|actions|dataset|requestpage|elements|schema)\b\s*\{/gi;
+        let match;
+        let lastExclusionIndex = -1;
+        while ((match = exclusionRegex.exec(text)) !== null) {
+            lastExclusionIndex = match.index;
+        }
+
+        if (lastExclusionIndex === -1) return false;
+
+        const textAfterExclusion = text.substring(lastExclusionIndex);
+        let braceCount = 0;
+        for (let i = 0; i < textAfterExclusion.length; i++) {
+            if (textAfterExclusion[i] === '{') braceCount++;
+            if (textAfterExclusion[i] === '}') braceCount--;
+        }
+        return braceCount > 0;
+    }
+}
+
+class ALVariableCompletionProvider {
+    provideCompletionItems(document, position, token, context) {
+        const scope = ALScopeAnalyzer.getActiveScope(document, position);
+        if (!scope || scope === 'UNKNOWN' || scope === 'INVALID') return undefined;
+
+        const lineText = document.lineAt(position.line).text;
+        const completions = [];
+
+        const colonIndex = lineText.indexOf(':');
+
+        if (colonIndex !== -1 && position.character <= colonIndex) {
+            let rightSide = lineText.substring(colonIndex + 1).trim();
+            if (rightSide.endsWith(';')) rightSide = rightSide.slice(0, -1).trim();
+
+            const typeMatch = /^(Record|Codeunit|Report|Page|Query|XmlPort|Enum)\s+"?([a-zA-Z0-9_ ]+)"?/i.exec(rightSide);
+
+            if (typeMatch) {
+                const objectName = typeMatch[2].replace(/"/g, '').trim();
+                let suggestedName = objectName.replace(/[^a-zA-Z0-9]/g, '');
+
+                if (scope === 'PARAMETER') {
+                    suggestedName = `p${suggestedName}`;
+                } else if (scope === 'LOCAL_VARIABLE') {
+                    suggestedName = `l${suggestedName}`;
+                } else if (scope === 'GLOBAL_VARIABLE') {
+                    suggestedName = `g${suggestedName}`;
+                }
+
+                if (rightSide.toLowerCase().includes('temporary')) {
+                    suggestedName = `Temp${suggestedName}`;
+                }
+
+                const item = new vscode.CompletionItem(suggestedName, vscode.CompletionItemKind.Variable);
+                item.detail = `Auto-suggested ${scope} name (AL Convention)`;
+                item.insertText = suggestedName;
+                completions.push(item);
+            }
+        }
+
+        return completions;
+    }
+}
 
 function toSnakeCase(str) {
-    return str.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+    if (!str) return '';
+    return str
+        .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/__+/g, '_')
+        .toLowerCase();
 }
 
 function toCamelCase(str) {
@@ -114,10 +222,14 @@ function cleanDoubleTypePrefix(prefix, base, style) {
 function checkNamingStyle(str, style) {
     if (!str) return true;
     switch (style) {
-        case 'snake_case': return /^[a-z0-9]+(_[a-z0-9]+)*$/.test(str);
-        case 'camelCase': return /^[a-z0-9]+([A-Z0-9][a-z0-9]*)*$/.test(str);
-        case 'PascalCase': return /^[A-Z0-9][a-z0-9]*([A-Z0-9][a-z0-9]*)*$/.test(str);
-        default: return true;
+        case 'snake_case':
+            return /^[a-z0-9_]+$/.test(str) && !/[A-Z]/.test(str);
+        case 'camelCase':
+            return /^[a-z0-9]+([A-Z0-9][a-z0-9]*)*$/.test(str);
+        case 'PascalCase':
+            return /^[A-Z0-9][a-z0-9]*([A-Z0-9][a-z0-9]*)*$/.test(str);
+        default:
+            return true;
     }
 }
 
@@ -130,25 +242,20 @@ function formatBaseName(str, style) {
     }
 }
 
-/**
- * Nâng cấp thuật toán V5: Tự động phân rã và dọn dẹp các tiền tố lai (lopt, pcode) dính liền
- */
 function extractPureBaseName(currentName, expectedPrefix) {
     if (!currentName) return '';
-
     if (currentName.startsWith(expectedPrefix)) {
         return currentName.substring(expectedPrefix.length);
     }
 
     let cleanBase = currentName;
-
     if (cleanBase.includes('_')) {
         const words = cleanBase.split('_');
         const coreBlacklist = new Set([
             'l', 'g', 'p', 't', 'v', 'var', 'temp', 'tmp', 'tem', 'gtemp', 'ltemp', 'ptemp'
         ]);
         const typeAbbreviations = new Set([
-            'rec', 'cu', 'pag', 'que', 'rep', 'int', 'txt', 'cod', 'boo', 'dec', 'guid', 'dat', 'opt', 'code', 'xml', 'jso', 'jsa', 'dic', 'lst', 'jst'
+            'rec', 'cu', 'pag', 'que', 'rep', 'int', 'txt', 'cod', 'boo', 'dec', 'guid', 'dat', 'opt', 'code', 'job', 'jar', 'jtk'
         ]);
 
         let startIndex = 0;
@@ -170,18 +277,16 @@ function extractPureBaseName(currentName, expectedPrefix) {
 
         let remainingWords = startIndex < words.length ? words.slice(startIndex) : [words[words.length - 1]];
         const normalizedExpected = expectedPrefix.toLowerCase().replace(/_/g, '');
-        
+
         while (remainingWords.length > 1) {
             const firstWordNormalized = remainingWords[0].toLowerCase().replace(/[^a-z0-9]/g, '');
             if (normalizedExpected.includes(firstWordNormalized)) {
-                remainingWords.shift(); 
+                remainingWords.shift();
             } else {
                 break;
             }
         }
-
-        cleanBase = remainingWords.join('_');
-        return cleanBase;
+        return remainingWords.join('_');
     }
 
     if (/^[glpt][A-Z]/.test(cleanBase)) {
@@ -199,10 +304,6 @@ function extractPureBaseName(currentName, expectedPrefix) {
     }
     return cleanBase;
 }
-
-// =========================================================================
-// 🎯 CÁC HÀM PHÂN TÁCH XỬ LÝ CHUYÊN BIỆT (MODULAR PROCESSORS)
-// =========================================================================
 
 function validateObjects(text, objectPrefixText, document, diagnostics) {
     const lines = text.split('\n');
@@ -230,215 +331,30 @@ function validateObjects(text, objectPrefixText, document, diagnostics) {
     }
 }
 
-function validateProcedures(text, namingStyle, document, diagnostics) {
-    const lines = text.split('\n');
-    const procRegex = /(?:local\s+|internal\s+)?procedure\s+([a-zA-Z0-9_]+)\(/i;
-    const procStyle = namingStyle['procedure'] || 'PascalCase';
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (/^\s*\/\//.test(line) || line.trim().startsWith('//')) continue;
-
-        const match = procRegex.exec(line);
-        if (match) {
-            const procName = match[1];
-            if (!checkNamingStyle(procName, procStyle)) {
-                const suggestedFix = formatBaseName(procName, procStyle);
-                const startChar = line.indexOf(procName);
-                if (startChar !== -1) {
-                    const range = new vscode.Range(new vscode.Position(i, startChar), new vscode.Position(i, startChar + procName.length));
-                    const diag = new vscode.Diagnostic(range, `AL Convention: Procedure name '${procName}' must comply with ${procStyle}`, vscode.DiagnosticSeverity.Warning);
-                    diag.code = 'AL_CONV_PROC';
-                    diag.suggestedFix = suggestedFix;
-                    diagnostics.push(diag);
-                }
-            }
-        }
-    }
-}
-// =========================================================================
-// 🚀 HÀM ĐIỀU PHỐI CHÍNH (MAIN COORDINATOR)
-// =========================================================================
-
-function reviewALCode(document, collection) {
-    if (document.languageId !== 'al' || (document.uri.scheme !== 'file' && document.uri.scheme !== 'untitled')) { 
-        return; 
-    }
-
-    const diagnostics = [];
-    const text = document.getText();
-
-    const config = vscode.workspace.getConfiguration('alConvention', document.uri);
-    const alObjectPrefix = config.get('alObjectPrefix') || 'ALE';
-    const namingStyle = config.get('namingStyle') || {};
-    const showShortTypeInName = config.get('showShortTypeInName') !== undefined ? config.get('showShortTypeInName') : true;
-    const typeAbbreviations = config.get('typeAbbreviations') || {};
-    const scopePrefixes = config.get('scopePrefixes') || {};
-        const temporaryRecordPrefix = config.get('temporaryRecordPrefix') || '';
-
-    const expectedPrefixHelpers = {
-        pPrefix: scopePrefixes['ProcedureParameter'] || '',
-            tempPrefix: temporaryRecordPrefix,
-        gPrefix: scopePrefixes['globalVariablePrefix'] || '',
-        lPrefix: scopePrefixes['localVariablePrefix'] || '',
-        tempPrefixBeforeScope: config.get('temporaryPrefixBeforeScope') !== undefined ? config.get('temporaryPrefixBeforeScope') : true,
-        getShortType: (fullType) => {
-            if (!showShortTypeInName) return '';
-            return typeAbbreviations[fullType] || typeAbbreviations[fullType.charAt(0).toUpperCase() + fullType.slice(1).toLowerCase()] || fullType.toLowerCase().substring(0, 3);
-        }
-    };
-
-    const paramStyle = namingStyle['parameter'] || 'PascalCase';
-    const localVarStyle = namingStyle['local_variable'] || 'PascalCase';
-    const globalVarStyle = namingStyle['global_variable'] || 'PascalCase';
-
-    validateObjects(text, alObjectPrefix, document, diagnostics);
-    validateProcedures(text, namingStyle, document, diagnostics);
-    validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers, document, diagnostics);
-    validateVariables(text, namingStyle, localVarStyle, globalVarStyle, expectedPrefixHelpers, document, diagnostics);
-
-    collection.set(document.uri, diagnostics);
-}
-
-function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, expectedPrefixHelpers, document, diagnostics) {
-    const lines = text.split('\n');
-    let currentScope = 'global'; 
-    
-    let isInsideProcedureSignature = false; 
-    let procedureBaseIndent = 0; // 🌟 Lưu độ thụt lề gốc của Procedure hiện tại
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (/^\s*\/\//.test(line) || line.trim().startsWith('//')) continue;
-
-        const trimmedLine = line.trim().toLowerCase();
-
-        // 1. Nhận diện điểm BẮT ĐẦU của một Procedure hoặc Trigger
-        if (/(?:local\s+|internal\s+)?procedure\s+/i.test(line) || /\btrigger\s+[a-zA-Z0-9_]+\(/i.test(line)) {
-            currentScope = 'local';
-            isInsideProcedureSignature = true; 
-            
-            // 🌟 ĐO ĐỘ THỤT LỀ GỐC: Đếm số lượng khoảng trắng/tab ở đầu dòng khai báo hàm
-            const indentMatch = line.match(/^(\s*)/);
-            procedureBaseIndent = indentMatch ? indentMatch[1].length : 0;
-            
-            continue; // Bỏ qua dòng signature
-        }
-
-        // 2. Nhận diện điểm KẾT THÚC của Signature dựa trên từ khóa VÀ ĐỘ THỤT LỀ (Indent)
-        if (isInsideProcedureSignature) {
-            // Tính độ thụt lề của dòng hiện tại
-            const currentIndentMatch = line.match(/^(\s*)/);
-            const currentIndent = currentIndentMatch ? currentIndentMatch[1].length : 0;
-
-            // Điều kiện dứt khoát: Gặp 'var' hoặc 'begin' VÀ phải thẳng hàng (hoặc nằm ngoài) cấp độ của procedure gốc
-            if (trimmedLine === 'var' || trimmedLine.startsWith('var ') || trimmedLine === 'begin' || trimmedLine.startsWith('begin ')) {
-                if (currentIndent <= procedureBaseIndent) {
-                    isInsideProcedureSignature = false; // Hạ cờ chặn quét biến thành công!
-                    continue; // Bỏ qua dòng 'var' hoặc 'begin' này
-                }
-            }
-            
-            // Nếu cờ vẫn bật, dòng này an toàn thuộc về tham số -> CẤM QUÉT BIẾN
-            continue; 
-        }
-        
-        // 3. Trở về global nếu gặp dấu đóng khối hẳn của Procedure/Trigger bằng end; hoặc đóng khối Object }
-        if (trimmedLine.startsWith('end;') || trimmedLine === '}') {
-            currentScope = 'global';
-            isInsideProcedureSignature = false;
-        }
-
-        // 4. Tiến hành quét cấu trúc biến (Bảo đảm không bị giẫm chân lên parameter dù viết kiểu gì)
-        const varMatch = /^\s*([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_\[\]" ]+)/.exec(line);
-        if (varMatch) {
-            const vName = varMatch[1];
-            const fullTypeString = varMatch[2].trim();
-            const vType = fullTypeString.split(' ')[0].split('[')[0].replace(/"/g, '');
-            const shortType = expectedPrefixHelpers.getShortType(vType);
-
-            let isTemp = /\btemporary\b/i.test(line);
-            if (!isTemp && i + 1 < lines.length) {
-                if (/^\s*IsTemporary\s*=\s*true\s*;/i.test(lines[i + 1])) {
-                    isTemp = true;
-                }
-            }
-
-            const isLocal = (currentScope === 'local'); 
-            const prefixChar = isLocal ? expectedPrefixHelpers.lPrefix : expectedPrefixHelpers.gPrefix;
-            const currentStyle = isLocal ? localVarStyle : globalVarStyle;
-
-            let expectedPrefix = '';
-            if (currentStyle === 'PascalCase') {
-                if (isTemp) {
-                    expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
-                        ? `${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(prefixChar)}${capitalize(shortType)}`
-                        : `${capitalize(prefixChar)}${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(shortType)}`;
-                } else {
-                    expectedPrefix = `${capitalize(prefixChar)}${capitalize(shortType)}`;
-                }
-            } else {
-                if (isTemp) {
-                    expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
-                        ? `${expectedPrefixHelpers.tempPrefix}${prefixChar}${shortType}_`
-                        : `${prefixChar}${expectedPrefixHelpers.tempPrefix}${shortType}_`;
-                } else {
-                    expectedPrefix = `${prefixChar}${shortType}_`;
-                }
-            }
-            
-            const cleanBase = extractPureBaseName(vName, expectedPrefix);
-            let formattedBase = formatBaseName(cleanBase, currentStyle);
-            formattedBase = cleanDoubleTypePrefix(expectedPrefix, formattedBase, currentStyle);
-            const suggestedFix = expectedPrefix + formattedBase;
-
-            if (vName !== suggestedFix) {
-                const startChar = line.indexOf(vName);
-                if (startChar !== -1) {
-                    const range = new vscode.Range(new vscode.Position(i, startChar), new vscode.Position(i, startChar + vName.length));
-                    const diag = new vscode.Diagnostic(range, `AL Convention: Variable '${vName}' must use format '${suggestedFix}'`, vscode.DiagnosticSeverity.Warning);
-                    diag.code = 'AL_CONV_VAR';
-                    diag.suggestedFix = suggestedFix;
-                    diagnostics.push(diag);
-                }
-            }
-        }
-    }
-}
 function validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers, document, diagnostics) {
     const textLines = text.split('\n');
     let inEventSubscriber = false;
 
     for (let i = 0; i < textLines.length; i++) {
         const line = textLines[i];
-        
-        // 1. Bỏ qua nếu là dòng comment
         if (/^\s*\/\//.test(line) || line.trim().startsWith('//')) continue;
 
-        // Bật cờ nếu là EventSubscriber (Để skip bảo vệ luật Microsoft)
         if (/^\s*\[EventSubscriber\(/i.test(line)) {
             inEventSubscriber = true;
         }
 
-        // 2. Nhận diện dòng chứa từ khóa procedure
         if (/(?:local\s+|internal\s+)?procedure\s+/i.test(line)) {
             const procIndex = line.indexOf('procedure');
             const commentIndex = line.indexOf('//');
             if (commentIndex !== -1 && commentIndex < procIndex) continue;
 
             if (inEventSubscriber) {
-                inEventSubscriber = false; 
-                continue; 
+                inEventSubscriber = false;
+                continue;
             }
-            inEventSubscriber = false; 
+            inEventSubscriber = false;
 
-            // 3. XỬ LÝ ĐA DÒNG: Thu thập toàn bộ block chứa tham số nằm trong cặp ngoặc (...)
-            // Phòng trường hợp danh sách tham số dài và bị lập trình viên xuống hàng
             let fullSignature = line;
-            let targetLineIndex = i;
-            let openBraceIndex = line.indexOf('(');
-            
-            // Nếu dòng hiện tại không chứa dấu đóng ngoặc ')', ta gom dòng tiếp theo vào để phân tích
             let j = i;
             while (!fullSignature.includes(')') && j + 1 < textLines.length) {
                 j++;
@@ -449,16 +365,14 @@ function validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers
             if (!paramMatch || !paramMatch[1].trim()) continue;
 
             const paramBlock = paramMatch[1];
-            
-            // 🌟 TÁCH CÁC PARAMETER BẰNG DẤU CHẤM PHẨY CHUẨN XÁC
             const actualParams = paramBlock.split(';');
-            
+
             actualParams.forEach(param => {
                 const parts = param.split(':');
                 if (parts.length === 2) {
                     let pName = parts[0].replace(/var\s+/i, '').trim();
                     let fullTypeString = parts[1].trim();
-                    
+
                     const isTemp = /\btemporary\b/i.test(fullTypeString);
                     let pType = fullTypeString.split(' ')[0].split('[')[0].replace(/"/g, '');
                     const shortType = expectedPrefixHelpers.getShortType(pType);
@@ -466,7 +380,7 @@ function validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers
                     let expectedPrefix = '';
                     if (paramStyle === 'PascalCase') {
                         if (isTemp) {
-                            expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope 
+                            expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
                                 ? `${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(expectedPrefixHelpers.pPrefix)}${capitalize(shortType)}`
                                 : `${capitalize(expectedPrefixHelpers.pPrefix)}${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(shortType)}`;
                         } else {
@@ -488,12 +402,14 @@ function validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers
                     const suggestedFix = expectedPrefix + formattedBase;
 
                     if (pName !== suggestedFix) {
-                        // 🌟 TÌM DÒNG THỰC TẾ CHỨA PARAMETER LỖI (Để hiển thị dấu lượn sóng đúng vị trí)
                         let foundLine = i;
                         let startChar = -1;
-                        
+
                         for (let k = i; k <= j; k++) {
-                            startChar = textLines[k].indexOf(pName);
+                            const currentLineText = textLines[k];
+                            const searchStartIndex = currentLineText.includes('(') ? currentLineText.indexOf('(') + 1 : 0;
+
+                            startChar = currentLineText.indexOf(pName, searchStartIndex);
                             if (startChar !== -1) {
                                 foundLine = k;
                                 break;
@@ -510,12 +426,201 @@ function validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers
                     }
                 }
             });
-            
-            // Cập nhật bước nhảy vòng lặp lớn nếu signature kéo dài nhiều dòng
             i = j;
         }
     }
 }
-function deactivate() {}
+
+function validateProcedures(text, namingStyle, document, diagnostics) {
+    const lines = text.split('\n');
+    const procRegex = /(?:local\s+|internal\s+)?procedure\s+([a-zA-Z0-9_]+)\s*\(/i;
+    const procStyle = namingStyle['procedure'] || 'snake_case';
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^\s*\/\//.test(line) || line.trim().startsWith('//')) continue;
+
+        const match = procRegex.exec(line);
+        if (match) {
+            const procName = match[1];
+
+            if (!checkNamingStyle(procName, procStyle)) {
+                const suggestedFix = formatBaseName(procName, procStyle);
+
+                const procKeywordIndex = line.indexOf('procedure');
+                const startChar = line.indexOf(procName, procKeywordIndex);
+
+                if (startChar !== -1) {
+                    const range = new vscode.Range(new vscode.Position(i, startChar), new vscode.Position(i, startChar + procName.length));
+                    const diag = new vscode.Diagnostic(range, `AL Convention: Procedure name '${procName}' must comply with ${procStyle}`, vscode.DiagnosticSeverity.Warning);
+                    diag.code = 'AL_CONV_PROC';
+                    diag.suggestedFix = suggestedFix;
+                    diagnostics.push(diag);
+                }
+            }
+        }
+    }
+}
+
+function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, expectedPrefixHelpers, document, diagnostics) {
+    const lines = text.split('\n');
+    let currentScope = 'global';
+    let isInsideProcedureSignature = false;
+    let procedureBaseIndent = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^\s*\/\//.test(line) || line.trim().startsWith('//')) continue;
+
+        const trimmedLine = line.trim().toLowerCase();
+
+        if (/(?:local\s+|internal\s+)?procedure\s+/i.test(line) || /\btrigger\s+[a-zA-Z0-9_]+/i.test(line)) {
+            currentScope = 'local';
+            isInsideProcedureSignature = true;
+
+            const indentMatch = line.match(/^(\s*)/);
+            procedureBaseIndent = indentMatch ? indentMatch[1].length : 0;
+
+            if (line.includes(')') && /\b(begin|var)\b/i.test(line)) {
+                isInsideProcedureSignature = false;
+            }
+            continue;
+        }
+
+        if (isInsideProcedureSignature) {
+            const currentIndentMatch = line.match(/^(\s*)/);
+            const currentIndent = currentIndentMatch ? currentIndentMatch[1].length : 0;
+
+            const isBlockStart = trimmedLine === 'var' || trimmedLine === 'begin' || trimmedLine.startsWith('var ') || trimmedLine.startsWith('begin ');
+            const isSignatureEndLine = line.includes(')') && !/(?:local\s+|internal\s+)?procedure\s+/i.test(line);
+
+            if ((isBlockStart && currentIndent <= procedureBaseIndent) || isSignatureEndLine) {
+                isInsideProcedureSignature = false;
+                if (isSignatureEndLine) continue;
+            }
+            continue;
+        }
+
+        if (trimmedLine.startsWith('end;') || trimmedLine === '}') {
+            const currentIndentMatch = line.match(/^(\s*)/);
+            const currentIndent = currentIndentMatch ? currentIndentMatch[1].length : 0;
+            if (currentIndent === 0 || trimmedLine === '}') {
+                currentScope = 'global';
+            }
+        }
+
+        const varMatch = /^\s*([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_\[\]" ]+)/.exec(line);
+        if (varMatch) {
+            const vName = varMatch[1];
+            const fullTypeString = varMatch[2].trim();
+            const vType = fullTypeString.split(' ')[0].split('[')[0].replace(/"/g, '');
+            const shortType = expectedPrefixHelpers.getShortType(vType);
+
+            let isTemp = /\btemporary\b/i.test(line);
+            if (!isTemp && i + 1 < lines.length) {
+                if (/^\s*IsTemporary\s*=\s*true\s*;/i.test(lines[i + 1])) {
+                    isTemp = true;
+                }
+            }
+
+            const isLocal = (currentScope === 'local');
+            const prefixChar = isLocal ? expectedPrefixHelpers.lPrefix : expectedPrefixHelpers.gPrefix;
+            const currentStyle = isLocal ? (localVarStyle || 'snake_case') : (globalVarStyle || 'snake_case');
+
+            let expectedPrefix = '';
+            if (currentStyle === 'PascalCase') {
+                if (isTemp) {
+                    expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
+                        ? `${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(prefixChar)}${capitalize(shortType)}`
+                        : `${capitalize(prefixChar)}${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(shortType)}`;
+                } else {
+                    expectedPrefix = `${capitalize(prefixChar)}${capitalize(shortType)}`;
+                }
+            } else {
+                const cleanTempPrefix = expectedPrefixHelpers.tempPrefix.replace(/_/g, '');
+                if (isTemp) {
+                    expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
+                        ? `${cleanTempPrefix}_${prefixChar}${shortType}_`
+                        : `${prefixChar}${cleanTempPrefix}_${shortType}_`;
+                } else {
+                    expectedPrefix = `${prefixChar}${shortType}_`;
+                }
+            }
+
+            const cleanBase = extractPureBaseName(vName, expectedPrefix);
+            let formattedBase = formatBaseName(cleanBase, currentStyle);
+            formattedBase = cleanDoubleTypePrefix(expectedPrefix, formattedBase, currentStyle);
+            const suggestedFix = expectedPrefix + formattedBase;
+
+            if (vName !== suggestedFix) {
+                const startChar = line.indexOf(vName);
+                if (startChar !== -1) {
+                    const range = new vscode.Range(new vscode.Position(i, startChar), new vscode.Position(i, startChar + vName.length));
+                    const diag = new vscode.Diagnostic(range, `AL Convention: Variable '${vName}' must use format '${suggestedFix}'`, vscode.DiagnosticSeverity.Warning);
+                    diag.code = 'AL_CONV_VAR';
+                    diag.suggestedFix = suggestedFix;
+                    diagnostics.push(diag);
+                }
+            }
+        }
+    }
+}
+
+function reviewALCode(document, collection) {
+    if (document.languageId !== 'al' || (document.uri.scheme !== 'file' && document.uri.scheme !== 'untitled')) {
+        return;
+    }
+
+    const diagnostics = [];
+    const text = document.getText();
+
+    const config = vscode.workspace.getConfiguration('alConvention', document.uri);
+    const objectPrefixText = config.get('alObjectPrefix') || 'ATL';
+    const namingStyle = config.get('namingStyle') || {};
+    const showTypeInName = config.get('showShortTypeInName') !== undefined ? config.get('showShortTypeInName') : true;
+    const typeNameMap = config.get('typeAbbreviations') || {};
+
+    const typeNameMapLower = Object.keys(typeNameMap).reduce((acc, key) => {
+        acc[key.toLowerCase()] = typeNameMap[key];
+        return acc;
+    }, {});
+    const scopePrefixes = config.get('scopePrefixes') || {};
+    const tempRecordPrefix = config.get('temporaryRecordPrefix') || 'temp_';
+    const tempPrefixBeforeScope = config.get('temporaryPrefixBeforeScope') !== undefined ? config.get('temporaryPrefixBeforeScope') : false;
+
+    const expectedPrefixHelpers = {
+        pPrefix: scopePrefixes['ProcedureParameter'] || 'p',
+        tempPrefix: tempRecordPrefix,
+        gPrefix: scopePrefixes['globalVariablePrefix'] || 'g',
+        lPrefix: scopePrefixes['localVariablePrefix'] || 'l',
+        tempPrefixBeforeScope: tempPrefixBeforeScope,
+        getShortType: (fullType) => {
+            if (!showTypeInName) return '';
+            const lowerType = fullType.toLowerCase().trim();
+
+            if (typeNameMapLower[lowerType])
+                return typeNameMapLower[lowerType];
+
+            const defaultTypeMap = {
+                'jsonobject': 'job', 'jsonarray': 'jar', 'jsontoken': 'jtk',
+                'integer': 'int', 'text': 'txt', 'code': 'cod', 'record': 'rec', 'report': 'rep'
+            };
+            return defaultTypeMap[lowerType] || lowerType.substring(0, 3);
+        }
+    };
+
+    const paramStyle = namingStyle['parameter'] || 'snake_case';
+    const localVarStyle = namingStyle['local_variable'] || 'snake_case';
+    const globalVarStyle = namingStyle['global_variable'] || 'snake_case';
+
+    validateObjects(text, objectPrefixText, document, diagnostics);
+    validateProcedures(text, namingStyle, document, diagnostics);
+    validateParameters(text, namingStyle, paramStyle, expectedPrefixHelpers, document, diagnostics);
+    validateVariables(text, namingStyle, localVarStyle, globalVarStyle, expectedPrefixHelpers, document, diagnostics);
+
+    collection.set(document.uri, diagnostics);
+}
+
+function deactivate() { }
 
 module.exports = { activate, deactivate };
