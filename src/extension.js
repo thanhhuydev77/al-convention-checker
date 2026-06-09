@@ -19,7 +19,10 @@ function activate(context) {
 
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('al', new ALActionProvider(), {
-            providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
+            providedCodeActionKinds: [
+                vscode.CodeActionKind.QuickFix,
+                vscode.CodeActionKind.SourceFixAll
+            ]
         })
     );
 
@@ -42,6 +45,50 @@ function activate(context) {
             const fallbackEdit = new vscode.WorkspaceEdit();
             fallbackEdit.replace(uri, range, newName);
             await vscode.workspace.applyEdit(fallbackEdit);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('alConvention.fixAllNaming', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return vscode.window.showInformationMessage('No active editor.');
+            }
+
+            const doc = editor.document;
+            if (doc.languageId !== 'al') {
+                return vscode.window.showInformationMessage('Active editor is not an AL file.');
+            }
+
+            let diagnostics = diagnosticCollection.get(doc.uri) || [];
+            let fixableDiagnostics = diagnostics.filter(d => d.code && d.code.toString().startsWith('AL_CONV_') && d.suggestedFix);
+
+            if (fixableDiagnostics.length === 0) {
+                return vscode.window.showInformationMessage('No naming issues found in the active editor.');
+            }
+
+            // We process fixes one by one and re-evaluate to avoid shifting ranges
+            let maxIterations = fixableDiagnostics.length * 2;
+            let issueFixed = true;
+
+            while (issueFixed && maxIterations > 0) {
+                issueFixed = false;
+                maxIterations--;
+
+                diagnostics = diagnosticCollection.get(doc.uri) || [];
+                fixableDiagnostics = diagnostics.filter(d => d.code && d.code.toString().startsWith('AL_CONV_') && d.suggestedFix);
+
+                if (fixableDiagnostics.length > 0) {
+                    const diagnostic = fixableDiagnostics[0];
+                    await vscode.commands.executeCommand('alConvention.fixNaming', doc.uri, diagnostic.range, diagnostic.suggestedFix);
+                    
+                    // Manually re-trigger validation immediately to update diagnostics for the next iteration
+                    reviewALCode(doc, diagnosticCollection);
+                    issueFixed = true;
+                }
+            }
+
+            vscode.window.showInformationMessage('AL Convention: Quick Fix All completed.');
         })
     );
 
@@ -70,6 +117,22 @@ class ALActionProvider {
                     actions.push(fixAction);
                 }
             });
+            
+        // Provide "Fix All" action if applicable or explicitly requested
+        const isFixAll = context.only && context.only.contains(vscode.CodeActionKind.SourceFixAll);
+        if (actions.length > 0 || isFixAll) {
+            const fixAllAction = new vscode.CodeAction(
+                'Fix all AL naming convention issues',
+                vscode.CodeActionKind.SourceFixAll
+            );
+            fixAllAction.command = {
+                command: 'alConvention.fixAllNaming',
+                title: fixAllAction.title,
+                arguments: []
+            };
+            actions.push(fixAllAction);
+        }
+
         return actions;
     }
 }
