@@ -534,7 +534,7 @@ function reviewALCode(document, collection) {
     const text = document.getText();
 
     const config = vscode.workspace.getConfiguration('alConvention', document.uri);
-    const objectPrefixText = config.get('alObjectPrefix') || 'ATL';
+    const objectPrefixText = config.get('alObjectPrefix') || '';
     const namingStyle = config.get('namingStyle') || {};
     const showTypeInName = config.get('showShortTypeInName') !== undefined ? config.get('showShortTypeInName') : true;
     const typeNameMap = config.get('typeAbbreviations') || {};
@@ -548,10 +548,10 @@ function reviewALCode(document, collection) {
     const tempPrefixBeforeScope = config.get('temporaryPrefixBeforeScope') !== undefined ? config.get('temporaryPrefixBeforeScope') : false;
 
     const expectedPrefixHelpers = {
-        pPrefix: scopePrefixes['ProcedureParameter'] || 'p',
+        pPrefix: scopePrefixes['ProcedureParameter'] || '',
         tempPrefix: tempRecordPrefix,
-        gPrefix: scopePrefixes['globalVariablePrefix'] || 'g',
-        lPrefix: scopePrefixes['localVariablePrefix'] || 'l',
+        gPrefix: scopePrefixes['globalVariablePrefix'] || '',
+        lPrefix: scopePrefixes['localVariablePrefix'] || '',
         tempPrefixBeforeScope: tempPrefixBeforeScope,
         getShortType: (fullType) => {
             if (!showTypeInName) return '';
@@ -662,16 +662,37 @@ function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, exp
             const prefixChar = isLocal ? expectedPrefixHelpers.lPrefix : expectedPrefixHelpers.gPrefix;
             const currentStyle = isLocal ? (localVarStyle || 'snake_case') : (globalVarStyle || 'snake_case');
 
+            // 1. Tách lấy tên gốc tinh khiết trước khi tính toán prefix nâng cao
+            // Dùng cấu trúc tạm thời để bóc tách từ cũ
+            const tempPrefixCheck = currentStyle === 'PascalCase' ? prefixChar : `${prefixChar}${shortType}_`;
+            const cleanBase = extractPureBaseName(vName, tempPrefixCheck);
+
             let expectedPrefix = '';
+            let formattedBase = '';
+            let suggestedFix = '';
+
             if (currentStyle === 'PascalCase') {
-                if (isTemp) {
-                    expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
-                        ? `${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(prefixChar)}${capitalize(shortType)}`
-                        : `${capitalize(prefixChar)}${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(shortType)}`;
+                // 🌟 XỬ LÝ PASCAL CASE CHO BASE NAME TRƯỚC
+                formattedBase = formatBaseName(cleanBase, currentStyle);
+
+                // Gán expectedPrefix theo cấu hình hiện loại dữ liệu
+                if (shortType === '') {
+                    expectedPrefix = prefixChar; // Giữ nguyên chữ 'g' thường hoặc 'l' (Ví dụ: 'g')
                 } else {
-                    expectedPrefix = `${capitalize(prefixChar)}${capitalize(shortType)}`;
+                    if (isTemp) {
+                        expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
+                            ? `${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(prefixChar)}${capitalize(shortType)}`
+                            : `${capitalize(prefixChar)}${capitalize(expectedPrefixHelpers.tempPrefix)}${capitalize(shortType)}`;
+                    } else {
+                        expectedPrefix = `${capitalize(prefixChar)}${capitalize(shortType)}`;
+                    }
                 }
+                
+                formattedBase = cleanDoubleTypePrefix(expectedPrefix, formattedBase, currentStyle);
+                // Gắn tiền tố scope ra ngoài cùng sau khi tên biến đã thành PascalCase
+                suggestedFix = expectedPrefix + formattedBase;
             } else {
+                // Giữ nguyên luồng xử lý cũ của nhánh snake_case
                 const cleanTempPrefix = expectedPrefixHelpers.tempPrefix.replace(/_/g, '');
                 if (isTemp) {
                     expectedPrefix = expectedPrefixHelpers.tempPrefixBeforeScope
@@ -680,12 +701,10 @@ function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, exp
                 } else {
                     expectedPrefix = `${prefixChar}${shortType}_`;
                 }
+                
+                formattedBase = formatBaseName(cleanBase, currentStyle);
+                suggestedFix = expectedPrefix + formattedBase;
             }
-
-            const cleanBase = extractPureBaseName(vName, expectedPrefix);
-            let formattedBase = formatBaseName(cleanBase, currentStyle);
-            formattedBase = cleanDoubleTypePrefix(expectedPrefix, formattedBase, currentStyle);
-            const suggestedFix = expectedPrefix + formattedBase;
 
             if (vName !== suggestedFix) {
                 const startChar = line.indexOf(vName);

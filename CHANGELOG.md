@@ -6,11 +6,15 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [released]
 
+## [1.1.8]
+- Fix bug
+
 ## [1.1.7]
 - Fix bug for suggest global for Page extension
 
 ## [1.1.6]
 - Fix bug for suggest enum
+
 ## [1.1.5]
 - Add command pallet: ALTC: Fix All Name in Current File
 
