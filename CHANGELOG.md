@@ -4,7 +4,11 @@ All notable changes to the "al-convention-checker" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [released]
+
+## [1.1.7]
+- Fix bug for suggest global for Page extension
+
 ## [1.1.6]
 - Fix bug for suggest enum
 ## [1.1.5]

@@ -584,6 +584,7 @@ function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, exp
     let currentScope = 'global';
     let isInsideProcedureSignature = false;
     let procedureBaseIndent = 0;
+    let scopeBaseIndent = 0; // 🌟 BỔ SUNG: Lưu độ thụt lề gốc của scope local hiện tại
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -591,19 +592,22 @@ function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, exp
 
         const trimmedLine = line.trim().toLowerCase();
 
+        // 1. Nhận diện điểm BẮT ĐẦU của Procedure hoặc Trigger
         if (/(?:local\s+|internal\s+)?procedure\s+/i.test(line) || /\btrigger\s+[a-zA-Z0-9_]+/i.test(line)) {
             currentScope = 'local';
             isInsideProcedureSignature = true;
 
             const indentMatch = line.match(/^(\s*)/);
             procedureBaseIndent = indentMatch ? indentMatch[1].length : 0;
-
+            scopeBaseIndent = procedureBaseIndent; // Ghi nhớ độ thụt lề để đối chiếu end; sau này
+            
             if (line.includes(')') && /\b(begin|var)\b/i.test(line)) {
                 isInsideProcedureSignature = false;
             }
             continue;
         }
 
+        // 2. Máy trạng thái Indent-Aware bảo vệ vùng parameter đa dòng
         if (isInsideProcedureSignature) {
             const currentIndentMatch = line.match(/^(\s*)/);
             const currentIndent = currentIndentMatch ? currentIndentMatch[1].length : 0;
@@ -617,26 +621,31 @@ function validateVariables(text, namingStyle, localVarStyle, globalVarStyle, exp
             }
             continue;
         }
-
+        
+        // 3. 🌟 NÂNG CẤP BẢO VỆ SCOPE: Trở về global khi kết thúc block thực tế của hàm/trigger
         if (trimmedLine.startsWith('end;') || trimmedLine === '}') {
             const currentIndentMatch = line.match(/^(\s*)/);
             const currentIndent = currentIndentMatch ? currentIndentMatch[1].length : 0;
-            if (currentIndent === 0 || trimmedLine === '}') {
+            
+            // Nếu gặp end; thẳng hàng với trigger/procedure khai báo, hoặc lùi hẳn ra ngoài lề gốc
+            if (currentScope === 'local' && currentIndent <= scopeBaseIndent) {
+                currentScope = 'global';
+            } else if (currentIndent === 0 || trimmedLine === '}') {
                 currentScope = 'global';
             }
         }
 
-        // --- SỬA LỖI: Bỏ qua các pattern của case option (Ví dụ: "0:", "1:", "'KinhDoanh':", "Option::Value:") ---
+        // 4. Bỏ qua các pattern của khối cấu hình option (Ví dụ: "0:", "1:", "'KinhDoanh':")
         if (/^\s*([0-9]+|'[A-Za-z0-9_]+'|[A-Za-z0-9_]+::[A-Za-z0-9_]+)\s*:/i.test(line)) {
             continue;
         }
 
+        // 5. Quét cấu trúc khai báo biến
         const varMatch = /^\s*([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_\[\]" ]+)/.exec(line);
         if (varMatch) {
             const vName = varMatch[1];
             const fullTypeString = varMatch[2].trim();
 
-            // --- SỬA LỖI: Nếu vế phải bắt đầu trực tiếp bằng ký hiệu comment, bỏ qua luôn ---
             if (fullTypeString.startsWith('//')) continue;
 
             const vType = fullTypeString.split(' ')[0].split('[')[0].replace(/"/g, '');
