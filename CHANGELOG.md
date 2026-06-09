@@ -6,4 +6,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.1.5]
+- Add command pallet: ALTC: Fix All Name in Current File
+
 - Initial release
